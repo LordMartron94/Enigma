@@ -18,7 +18,7 @@ include(GNUInstallDirs)
 
 # -------------------- Dependencies (discovery + selection) --------------------
 # Choose how this library obtains its dependencies.
-option(enigma_USE_BUNDLED_SUBMODULES "Use submodules from external/*" ON)
+option(enigma_USE_BUNDLED_SUBMODULES "Use submodules from external/*" OFF)
 
 # --- Cache definitions that Projects depend on ---
 # set(NEXUS_DOUBLE_PRECISION ON CACHE BOOL "" FORCE)
@@ -39,16 +39,16 @@ if(enigma_USE_BUNDLED_SUBMODULES)
   # add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/external/chaos)
 else()
   # Use installed packages (or targets provided by a parent project)
-  # if(NOT TARGET nexus::nexus)
-  #   find_package(nexus CONFIG REQUIRED) # optionally: find_package(nexus 1.2 CONFIG REQUIRED)
-  # endif()
+   if(NOT TARGET nexus::nexus)
+     find_package(nexus CONFIG REQUIRED) # optionally: find_package(nexus 1.2 CONFIG REQUIRED)
+   endif()
   # if(NOT TARGET chaos::chaos)
   #   find_package(chaos CONFIG REQUIRED)
   # endif()
 endif()
 
 # Decide visibility (examples):
-# list(APPEND enigma_PUBLIC_DEPS  nexus::nexus)  # appears in public headers
+list(APPEND enigma_PUBLIC_DEPS  nexus::nexus)  # appears in public headers
 # list(APPEND enigma_PRIVATE_DEPS chaos::chaos)  # used only in .c files
 
 # ------------------------------------------------------------------------------

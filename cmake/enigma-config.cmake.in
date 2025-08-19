@@ -3,6 +3,6 @@
 include(CMakeFindDependencyMacro)
 
 # Make sure dependencies are found here if you add any in the future
-# find_dependency(nexus CONFIG REQUIRED)
+find_dependency(nexus CONFIG REQUIRED)
 
 include("${CMAKE_CURRENT_LIST_DIR}/enigmaTargets.cmake")

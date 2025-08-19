@@ -17,7 +17,6 @@ extern "C" {
 #endif
 
 /* Public API */
-int enigma_add(int a, int b);
 const char* enigma_version_string(void);
 
 #ifdef __cplusplus
