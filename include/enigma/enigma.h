@@ -3,61 +3,43 @@
 
 #ifdef __cplusplus
 extern "C" {
-    #endif
+#endif
 
-    #include <nexus/nexus.h>
+#include <stddef.h>
 
-    /* Version macros (optional) */
-    #ifndef ENIGMA_VERSION_MAJOR
-    #define ENIGMA_VERSION_MAJOR 0
-    #endif
-    #ifndef ENIGMA_VERSION_MINOR
-    #define ENIGMA_VERSION_MINOR 0
-    #endif
-    #ifndef ENIGMA_VERSION_PATCH
-    #define ENIGMA_VERSION_PATCH 0
-    #endif
+    /* ---- Version (optional) -------------------------------------------------- */
+#ifndef ENIGMA_VERSION_MAJOR
+#define ENIGMA_VERSION_MAJOR 0
+#endif
+#ifndef ENIGMA_VERSION_MINOR
+#define ENIGMA_VERSION_MINOR 0
+#endif
+#ifndef ENIGMA_VERSION_PATCH
+#define ENIGMA_VERSION_PATCH 0
+#endif
 
-    #define ENIGMA_FORMAT_MAX 256
-    #define ENIGMA_MESSAGE_MAX 128
+    enum { ENIGMA_MESSAGE_MAX = 128 };
 
-    typedef enum ENIGMA_SIGNATURE_STATUS_CODE {
-        ENIGMA_STATUS_OK = 0,
-        ENIGMA_STATUS_INVALID_ARGUMENTS = 1,
-        ENIGMA_STATUS_OPEN_FAILED = 2,
-        ENIGMA_STATUS_FILE_TOO_SHORT = 3,
-        ENIGMA_STATUS_SIGNATURE_MISMATCH = 4,
-        ENIGMA_STATUS_UNKNOWN_ERROR = 255
-    } ENIGMA_SIGNATURE_STATUS_CODE;
+    /* ---- Error codes --------------------------------------------------------- */
+    typedef enum {
+        ENIGMA_OK = 0,
+        ENIGMA_INVALID_ARGUMENT = 1,
+        ENIGMA_FUNCTION_ERROR = 2,
+        ENIGMA_UNKNOWN_ERROR = 255
+    } ENIGMA_ERROR_CODE;
 
-    typedef enum ENIGMA_SIGNATURES
-    {
-        ENIGMA_SIGNATURE_FLAC = 0,
-
-        _INTERNAL_UNKNOWN = 255
-    } ENIGMA_SIGNATURE;
-
-    typedef struct ENIGMA_SIGNATURE_READING_STATUS {
-        ENIGMA_SIGNATURE_STATUS_CODE code;
-        char message[ENIGMA_MESSAGE_MAX];
-    } ENIGMA_SIGNATURE_READING_STATUS;
-
-    typedef struct ENIGMA_READ_FILE_TEST
-    {
-        ENIGMA_SIGNATURE_READING_STATUS status;
-        NEXUS_BOOL signatureMatches;
-    } ENIGMA_READ_FILE_TEST;
-
-    /* Public API */
     const char* enigma_version_string(void);
 
-    void enigma_format_read_file_test(char* outBuffer, size_t outSize,
-                                      ENIGMA_READ_FILE_TEST test);
+    typedef struct ENIGMA_FLAC_INFORMATION *ENIGMA_FLAC_INFORMATION_HANDLE;
 
-    ENIGMA_READ_FILE_TEST enigma_file_signature_matches(const char* filePath, ENIGMA_SIGNATURE signature);
+    ENIGMA_ERROR_CODE enigma_flac_open(const char* filePath,
+                                       ENIGMA_FLAC_INFORMATION_HANDLE* outHandle,
+                                       char* errorBuffer, size_t errorBufferSize);
 
-    #ifdef __cplusplus
-}
+    void enigma_flac_close(ENIGMA_FLAC_INFORMATION_HANDLE handle);
+
+#ifdef __cplusplus
+} /* extern "C" */
 #endif
 
 #endif /* ENIGMA_H */

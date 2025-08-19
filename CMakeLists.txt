@@ -73,7 +73,18 @@ target_include_directories(enigma
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/internal
 )
+
+# ---- Attach private/internal headers so IDEs/analysis see them ----
+file(GLOB_RECURSE ENIGMA_PRIVATE_HEADERS CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/internal/*.h"
+)
+
+if(ENIGMA_PRIVATE_HEADERS AND TARGET enigma)
+  target_sources(enigma PRIVATE ${ENIGMA_PRIVATE_HEADERS})
+endif()
 
 # ---- Apply dependency link interfaces (MUST be after add_library) ----
 # Safe even if the lists are empty.
