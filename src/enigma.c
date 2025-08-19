@@ -13,6 +13,36 @@ const char* enigma_version_string(void) {
 /* Helpers                                                                   */
 /* ------------------------------------------------------------------------- */
 
+typedef struct {
+    ENIGMA_SIGNATURE       code;
+    const unsigned char*   bytes;
+    nexus_u8               sizeBytes;
+} ENIGMA_SIGNATURE_INFO;
+
+/* Hex codes to be found here: https://en.wikipedia.org/wiki/List_of_file_signatures */
+static const unsigned char SIGNATURE_FLAC[] = { 0x66, 0x4C, 0x61, 0x43 };
+
+static const ENIGMA_SIGNATURE_INFO enigmaSignatureMap[] = {
+    { ENIGMA_SIGNATURE_FLAC, SIGNATURE_FLAC, (nexus_u8)sizeof SIGNATURE_FLAC },
+};
+
+static ENIGMA_SIGNATURE_INFO enigma_get_signature_info(ENIGMA_SIGNATURE sig)
+{
+    {
+        for (size_t i = 0; i < sizeof enigmaSignatureMap / sizeof enigmaSignatureMap[0]; ++i) {
+            if (enigmaSignatureMap[i].code == sig) {
+                return enigmaSignatureMap[i];
+            }
+        }
+    }
+
+    ENIGMA_SIGNATURE_INFO nullSignature;
+    nullSignature.sizeBytes = 0;
+    nullSignature.bytes = NULL;
+    nullSignature.code = _INTERNAL_UNKNOWN;
+    return nullSignature;
+}
+
 static ENIGMA_SIGNATURE_READING_STATUS make_status(
     ENIGMA_SIGNATURE_STATUS_CODE code,
     const char* message)
@@ -82,17 +112,17 @@ void enigma_format_read_file_test(char* outBuffer, const size_t outSize,
 /* Core function                                                             */
 /* ------------------------------------------------------------------------- */
 
-ENIGMA_READ_FILE_TEST enigma_file_signature_matches(const char* filePath,
-                                                    const unsigned char* signature,
-                                                    const nexus_u32 signatureSizeBytes)
+ENIGMA_READ_FILE_TEST enigma_file_signature_matches(const char* filePath, const ENIGMA_SIGNATURE signature)
 {
-    if (!filePath || !signature || signatureSizeBytes == 0 || signatureSizeBytes > 32) {
+    const ENIGMA_SIGNATURE_INFO signatureInfo = enigma_get_signature_info(signature);
+
+    if (!filePath || !signatureInfo.bytes || signatureInfo.sizeBytes == 0 || signatureInfo.sizeBytes > 32) {
         return make_result(NEXUS_UNKNOWN,
                            ENIGMA_STATUS_INVALID_ARGUMENTS,
                            "Invalid arguments passed to enigma_file_signature_matches");
     }
 
-    unsigned char readBuffer[32];
+    unsigned char readBuffer[signatureInfo.sizeBytes];
 
     FILE* stream = NULL;
     const errno_t error = fopen_s(&stream, filePath, "rb");
@@ -106,16 +136,16 @@ ENIGMA_READ_FILE_TEST enigma_file_signature_matches(const char* filePath,
                            "Unknown system error");
     }
 
-    const size_t bytesRead = fread(readBuffer, 1, signatureSizeBytes, stream);
+    const size_t bytesRead = fread(readBuffer, 1, signatureInfo.sizeBytes, stream);
     fclose(stream);
 
-    if (bytesRead < signatureSizeBytes) {
+    if (bytesRead < signatureInfo.sizeBytes) {
         return make_result(NEXUS_UNKNOWN,
                            ENIGMA_STATUS_FILE_TOO_SHORT,
                            "File shorter than expected signature size");
     }
 
-    if (memcmp(readBuffer, signature, signatureSizeBytes) == 0) {
+    if (memcmp(readBuffer, signatureInfo.bytes, signatureInfo.sizeBytes) == 0) {
         return make_result(NEXUS_TRUE, ENIGMA_STATUS_OK, NULL);
     }
 
