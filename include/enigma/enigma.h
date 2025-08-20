@@ -38,8 +38,6 @@ extern "C" {
 
     void enigma_flac_close(ENIGMA_FLAC_INFORMATION_HANDLE handle);
 
-    void enigma_read_metadata_block_test(ENIGMA_FLAC_INFORMATION_HANDLE handle, char* errorBuffer, size_t errorBufferSize);
-
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
