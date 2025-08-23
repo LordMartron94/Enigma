@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-#include <stddef.h>
+#include <nexus/nexus.h>
 
     /* ---- Version (optional) -------------------------------------------------- */
 #ifndef ENIGMA_VERSION_MAJOR
@@ -20,23 +20,19 @@ extern "C" {
 
     enum { ENIGMA_MESSAGE_MAX = 128 };
 
-    /* ---- Error codes --------------------------------------------------------- */
-    typedef enum {
-        ENIGMA_OK = 0,
-        ENIGMA_INVALID_ARGUMENT = 1,
-        ENIGMA_FUNCTION_ERROR = 2,
-        ENIGMA_UNKNOWN_ERROR = 255
-    } ENIGMA_ERROR_CODE;
-
     const char* enigma_version_string(void);
 
     typedef struct ENIGMA_FLAC_INFORMATION *ENIGMA_FLAC_INFORMATION_HANDLE;
 
-    ENIGMA_ERROR_CODE enigma_flac_open(const char* filePath,
-                                       ENIGMA_FLAC_INFORMATION_HANDLE* outHandle,
-                                       char* errorBuffer, size_t errorBufferSize);
-
-    void enigma_flac_close(ENIGMA_FLAC_INFORMATION_HANDLE handle);
+    NEXUS_ERROR_CODE  enigma_flac_open(const char* filePath, ENIGMA_FLAC_INFORMATION_HANDLE* outHandle, char* errorBuffer, size_t errorBufferSize);
+    void              enigma_flac_close(ENIGMA_FLAC_INFORMATION_HANDLE handle);
+    nexus_u32         enigma_flac_samplerate_get(ENIGMA_FLAC_INFORMATION_HANDLE handle);
+    nexus_u8          enigma_flac_channels_get(ENIGMA_FLAC_INFORMATION_HANDLE handle);
+    nexus_u8          enigma_flac_bit_depth_get(ENIGMA_FLAC_INFORMATION_HANDLE handle);
+    float_real        enigma_flac_duration_seconds_get(ENIGMA_FLAC_INFORMATION_HANDLE handle);
+    float_real        enigma_flac_duration_milliseconds_get(ENIGMA_FLAC_INFORMATION_HANDLE handle);
+    nexus_u16         enigma_flac_last_metadata_block_end_offset_get(ENIGMA_FLAC_INFORMATION_HANDLE handle);
+    void              enigma_flac_frame_header_parse_test(ENIGMA_FLAC_INFORMATION_HANDLE handle);
 
 #ifdef __cplusplus
 } /* extern "C" */
