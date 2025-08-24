@@ -4,25 +4,38 @@
 #include <enigma/enigma.h>
 
 /* Resync using the file-handle API (peek + advance). */
-static NEXUS_BOOL enigma__flac_try_resync(NEXUS_FILE_INFORMATION_HANDLE fh,
-                                          size_t max_bytes_to_scan,
+static NEXUS_BOOL enigma__flac_try_resync(const NEXUS_FILE_INFORMATION_CHANDLE fileHandle,
+                                          const size_t maxBytesToScan,
                                           char* errorBuffer, const size_t errorBufferSize)
 {
-    unsigned char two[2];
-    for (size_t i = 0; i < max_bytes_to_scan; ++i) {
+    for (size_t i = 0; i < maxBytesToScan; ++i) {
+        unsigned char syncBytes[2];
         nexus_u64 got = 0;
-        if (!nexus_file_scan(fh, 2u, two, 2u, &got, errorBuffer, errorBufferSize) || got != 2u)
-            return NEXUS_FALSE;
 
-        unsigned short w = two[0] << 8 | two[1];
-        if ((unsigned)(w >> 2) == 0x3FFEu) {
-            return NEXUS_TRUE; /* at sync */
+        if (!nexus_file_reader_peek(fileHandle,
+                                    sizeof syncBytes,
+                                    syncBytes, sizeof syncBytes,
+                                    &got, errorBuffer, errorBufferSize) ||
+            got != sizeof syncBytes)
+        {
+            return NEXUS_FALSE;
         }
 
-        /* advance one byte */
+        /* Interpret as big-endian 16-bit candidate */
+        const unsigned short syncCandidate = syncBytes[0] << 8 | syncBytes[1];
+
+        /* FLAC frame sync: top 14 bits must equal FLAC_FRAME_SYNC_CODE */
+        if ((unsigned)(syncCandidate >> 2) == FLAC_FRAME_SYNC_CODE) {
+            return NEXUS_TRUE;
+        }
+
+        /* Not at sync yet: advance one byte and keep scanning */
         got = 0;
-        if (!nexus_file_consume(fh, 1u, NULL, 0u, &got, errorBuffer, errorBufferSize) || got != 1u)
+        if (!nexus_file_reader_consume(fileHandle, 1u, NULL, 0u, &got, errorBuffer, errorBufferSize) ||
+            got != 1u)
+        {
             return NEXUS_FALSE;
+        }
     }
     return NEXUS_FALSE;
 }
@@ -61,7 +74,7 @@ void enigma__streaminfo_debug_print(ENIGMA_FLAC_INFORMATION_HANDLE handle, FILE 
   }
 
   fputs("MD5 (raw):    ", out);
-  nexus_bytes_byte_array_hex_print(handle->md5Hash, 16, out);
+  nexus_bytes_byte_array_hex_file_print(handle->md5Hash, 16, out);
   fputc('\n', out);
 
   fputs("-------------------------\n", out);
@@ -70,54 +83,36 @@ void enigma__streaminfo_debug_print(ENIGMA_FLAC_INFORMATION_HANDLE handle, FILE 
 void enigma_flac_frame_header_parse_test(ENIGMA_FLAC_INFORMATION_HANDLE handle) {
     if (!handle) return;
 
-    /* 1) Open file handle at file start (logical cursor at 0). */
-    NEXUS_FILE_INFORMATION_HANDLE fh = NULL;
     char errorBuffer[ENIGMA_MESSAGE_MAX];
-    if (!nexus_file_information_open(handle->filePath, &fh, errorBuffer, sizeof errorBuffer)) {
-        printf("Open error: '%s'\n", errorBuffer);
-        return;
-    }
+    // ReSharper disable once CppLocalVariableMayBeConst
+    NEXUS_FILE_INFORMATION_HANDLE fileHandle = handle->fileInformationHandle;
 
-    /* 2) Jump to absolute end-of-metadata offset using a single consume from start. */
-    const nexus_u64 audio_start = handle->lastMetadataBlockEndOffset;
-    {
-        nexus_u64 got = 0;
-        if (!nexus_file_consume(fh, audio_start, NULL, 0u, &got, errorBuffer, sizeof errorBuffer) || got != audio_start) {
-            printf("Seek error: '%s'\n", errorBuffer);
-            nexus_file_information_close(fh);
-            return;
-        }
-    }
-
-    /* 3) Resync to the 14-bit FLAC sync (scan up to a generous window). */
-    if (!enigma__flac_try_resync(fh, 65536 /* 64 KiB window */, errorBuffer, sizeof errorBuffer)) {
+    /* 1) Resync to the 14-bit FLAC sync (scan up to a generous window). */
+    if (!enigma__flac_try_resync(fileHandle, 65536 /* 64 KiB window */, errorBuffer, sizeof errorBuffer)) {
         /* Dump a few bytes to help diagnosis */
         unsigned char dump[8] = {0};
         nexus_u64 got = 0;
-        if (nexus_file_scan(fh, 8u, dump, 8u, &got, errorBuffer, sizeof errorBuffer) && got == 8u) {
+        if (nexus_file_reader_peek(fileHandle, 8u, dump, 8u, &got, errorBuffer, sizeof errorBuffer) && got == 8u) {
             printf("Could not find frame sync within lookahead window. Next bytes: "
                    "0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X\n",
                    dump[0],dump[1],dump[2],dump[3],dump[4],dump[5],dump[6],dump[7]);
         } else {
             printf("Could not find frame sync and failed to peek: '%s'\n", errorBuffer);
         }
-        nexus_file_information_close(fh);
         return;
     }
 
-    /* 4) Read first 4 header bytes (peek then advance). */
+    /* 2) Read first 4 header bytes (peek then advance). */
     unsigned char hdr4[4];
     {
         nexus_u64 got = 0;
-        if (!nexus_file_scan(fh, 4u, hdr4, 4u, &got, errorBuffer, sizeof errorBuffer) || got != 4u) {
+        if (!nexus_file_reader_peek(fileHandle, 4u, hdr4, 4u, &got, errorBuffer, sizeof errorBuffer) || got != 4u) {
             printf("Read error (peek 4 bytes): '%s'\n", errorBuffer);
-            nexus_file_information_close(fh);
             return;
         }
         got = 0;
-        if (!nexus_file_consume(fh, 4u, NULL, 0u, &got, errorBuffer, sizeof errorBuffer) || got != 4u) {
+        if (!nexus_file_reader_consume(fileHandle, 4u, NULL, 0u, &got, errorBuffer, sizeof errorBuffer) || got != 4u) {
             printf("Read error (consume 4 bytes): '%s'\n", errorBuffer);
-            nexus_file_information_close(fh);
             return;
         }
     }
@@ -133,14 +128,12 @@ void enigma_flac_frame_header_parse_test(ENIGMA_FLAC_INFORMATION_HANDLE handle) 
     syncWord >>= 2;
     if (syncWord != 0x3FFE) {
         printf("Invalid sync code!\n");
-        nexus_file_information_close(fh);
         return;
     }
 
     const nexus_u8 reserved_after_sync = secondByte >> 1 & 0x01u;
     if (reserved_after_sync != 0) {
         printf("Frame header reserved bit (after sync) not zero!\n");
-        nexus_file_information_close(fh);
         return;
     }
 
@@ -189,7 +182,6 @@ void enigma_flac_frame_header_parse_test(ENIGMA_FLAC_INFORMATION_HANDLE handle) 
     const unsigned char reserved0 = fourthByte & 0x01u;
     if (reserved0 != 0) {
         printf("Frame header reserved bit (LSB of 4th byte) not zero!\n");
-        nexus_file_information_close(fh);
         return;
     }
 
@@ -230,9 +222,8 @@ void enigma_flac_frame_header_parse_test(ENIGMA_FLAC_INFORMATION_HANDLE handle) 
     unsigned char utf8First = 0;
     {
         nexus_u64 got = 0;
-        if (!nexus_file_consume(fh, 1u, &utf8First, 1u, &got, errorBuffer, sizeof errorBuffer) || got != 1u) {
+        if (!nexus_file_reader_consume(fileHandle, 1u, &utf8First, 1u, &got, errorBuffer, sizeof errorBuffer) || got != 1u) {
             printf("Read error (UTF-8 coded number first byte): '%s'\n", errorBuffer);
-            nexus_file_information_close(fh);
             return;
         }
     }
@@ -240,13 +231,14 @@ void enigma_flac_frame_header_parse_test(ENIGMA_FLAC_INFORMATION_HANDLE handle) 
 
     int leadingOnes = 0;
     for (int b = 7; b >= 0; --b) {
-        if (((utf8First >> b) & 1u) == 1u) leadingOnes++;
-        else break;
+      if (((utf8First >> b) & 1u) == 1u)
+        leadingOnes++;
+      else
+        break;
     }
-    int utf8Len = (leadingOnes == 0) ? 1 : leadingOnes;
+    const int utf8Len = (leadingOnes == 0) ? 1 : leadingOnes;
     if (utf8Len > 6 || utf8Len < 1) {
         printf("Invalid UTF-8 coded integer length\n");
-        nexus_file_information_close(fh);
         return;
     }
 
@@ -258,14 +250,14 @@ void enigma_flac_frame_header_parse_test(ENIGMA_FLAC_INFORMATION_HANDLE handle) 
         for (int i = 1; i < utf8Len; ++i) {
             unsigned char cont = 0;
             nexus_u64 got = 0;
-            if (!nexus_file_consume(fh, 1u, &cont, 1u, &got, errorBuffer, sizeof errorBuffer) || got != 1u) {
+            if (!nexus_file_reader_consume(fileHandle, 1u, &cont, 1u, &got, errorBuffer, sizeof errorBuffer) || got != 1u) {
                 printf("Read error (UTF-8 continuation): '%s'\n", errorBuffer);
-                nexus_file_information_close(fh);
+                nexus_file_information_close(fileHandle);
                 return;
             }
             if ((cont & 0xC0u) != 0x80u) {
                 printf("Invalid UTF-8 continuation byte in frame header\n");
-                nexus_file_information_close(fh);
+                nexus_file_information_close(fileHandle);
                 return;
             }
             crc8 = nexus_validation_crc8_update(crc8, cont);
@@ -282,9 +274,8 @@ void enigma_flac_frame_header_parse_test(ENIGMA_FLAC_INFORMATION_HANDLE handle) 
     if (blockSizeCode == 0x6) {
         unsigned char size8 = 0;
         nexus_u64 got = 0;
-        if (!nexus_file_consume(fh, 1u, &size8, 1u, &got, errorBuffer, sizeof errorBuffer) || got != 1u) {
+        if (!nexus_file_reader_consume(fileHandle, 1u, &size8, 1u, &got, errorBuffer, sizeof errorBuffer) || got != 1u) {
             printf("Read error (8-bit block size): '%s'\n", errorBuffer);
-            nexus_file_information_close(fh);
             return;
         }
         crc8 = nexus_validation_crc8_update(crc8, size8);
@@ -293,9 +284,8 @@ void enigma_flac_frame_header_parse_test(ENIGMA_FLAC_INFORMATION_HANDLE handle) 
     } else if (blockSizeCode == 0x7) {
         unsigned char sizeHiLo[2];
         nexus_u64 got = 0;
-        if (!nexus_file_consume(fh, 2u, sizeHiLo, 2u, &got, errorBuffer, sizeof errorBuffer) || got != 2u) {
+        if (!nexus_file_reader_consume(fileHandle, 2u, sizeHiLo, 2u, &got, errorBuffer, sizeof errorBuffer) || got != 2u) {
             printf("Read error (16-bit block size): '%s'\n", errorBuffer);
-            nexus_file_information_close(fh);
             return;
         }
         crc8 = nexus_validation_crc8_update(crc8, sizeHiLo[0]);
@@ -307,9 +297,8 @@ void enigma_flac_frame_header_parse_test(ENIGMA_FLAC_INFORMATION_HANDLE handle) 
     if (sampleRateCode == 0xC) {
         unsigned char sr_khz = 0;
         nexus_u64 got = 0;
-        if (!nexus_file_consume(fh, 1u, &sr_khz, 1u, &got, errorBuffer, sizeof errorBuffer) || got != 1u) {
+        if (!nexus_file_reader_consume(fileHandle, 1u, &sr_khz, 1u, &got, errorBuffer, sizeof errorBuffer) || got != 1u) {
             printf("Read error (8-bit sample rate kHz): '%s'\n", errorBuffer);
-            nexus_file_information_close(fh);
             return;
         }
         crc8 = nexus_validation_crc8_update(crc8, sr_khz);
@@ -318,9 +307,8 @@ void enigma_flac_frame_header_parse_test(ENIGMA_FLAC_INFORMATION_HANDLE handle) 
     } else if (sampleRateCode == 0xD) {
         unsigned char srHiLo[2];
         nexus_u64 got = 0;
-        if (!nexus_file_consume(fh, 2u, srHiLo, 2u, &got, errorBuffer, sizeof errorBuffer) || got != 2u) {
+        if (!nexus_file_reader_consume(fileHandle, 2u, srHiLo, 2u, &got, errorBuffer, sizeof errorBuffer) || got != 2u) {
             printf("Read error (16-bit sample rate Hz): '%s'\n", errorBuffer);
-            nexus_file_information_close(fh);
             return;
         }
         crc8 = nexus_validation_crc8_update(crc8, srHiLo[0]);
@@ -330,9 +318,8 @@ void enigma_flac_frame_header_parse_test(ENIGMA_FLAC_INFORMATION_HANDLE handle) 
     } else if (sampleRateCode == 0xE) {
         unsigned char sr10HiLo[2];
         nexus_u64 got = 0;
-        if (!nexus_file_consume(fh, 2u, sr10HiLo, 2u, &got, errorBuffer, sizeof errorBuffer) || got != 2u) {
+        if (!nexus_file_reader_consume(fileHandle, 2u, sr10HiLo, 2u, &got, errorBuffer, sizeof errorBuffer) || got != 2u) {
             printf("Read error (16-bit sample rate x10 Hz): '%s'\n", errorBuffer);
-            nexus_file_information_close(fh);
             return;
         }
         crc8 = nexus_validation_crc8_update(crc8, sr10HiLo[0]);
@@ -344,9 +331,8 @@ void enigma_flac_frame_header_parse_test(ENIGMA_FLAC_INFORMATION_HANDLE handle) 
     unsigned char crc8Stored = 0;
     {
         nexus_u64 got = 0;
-        if (!nexus_file_consume(fh, 1u, &crc8Stored, 1u, &got, errorBuffer, sizeof errorBuffer) || got != 1u) {
+        if (!nexus_file_reader_consume(fileHandle, 1u, &crc8Stored, 1u, &got, errorBuffer, sizeof errorBuffer) || got != 1u) {
             printf("Read error (CRC-8): '%s'\n", errorBuffer);
-            nexus_file_information_close(fh);
             return;
         }
     }
@@ -354,10 +340,8 @@ void enigma_flac_frame_header_parse_test(ENIGMA_FLAC_INFORMATION_HANDLE handle) 
 
     if (crc8Stored != crc8) {
         printf("Frame header CRC-8 mismatch!\n");
-        nexus_file_information_close(fh);
         return;
     }
 
     printf("Frame header parsed successfully.\n");
-    nexus_file_information_close(fh);
 }

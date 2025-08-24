@@ -3,8 +3,14 @@
 
 #include <nexus/nexus.h>
 
+#define FLAC_FRAME_SYNC_CODE 0x3FFEu
+#define FLAC_FRAME_SYNC_MASK 0x3FFFu /* 14-bit mask for sync check */
+
 /* Hex codes: FLAC 'fLaC' */
 static const unsigned char ENIGMA_FLAC_SIGNATURE[4] = { 0x66, 0x4C, 0x61, 0x43 };
+static const nexus_u8 ENIGMA_FLAC_SIGNATURE_BYTES_SIZE = 4;
+
+static const nexus_u8 ENIGMA_FLAC_BLOCK_HEADER_BYTES_SIZE = 4;
 
 typedef struct {
   NEXUS_BOOL isLast;
@@ -12,11 +18,10 @@ typedef struct {
   nexus_u32 metadataBlockSize;
 } ENIGMA_FLAC_METADATA_HEADER;
 
-inline ENIGMA_FLAC_METADATA_HEADER enigma_metadata_header_info_create(
-    const unsigned char *bytes, const size_t byteAmount)
+inline ENIGMA_FLAC_METADATA_HEADER enigma_metadata_header_info_create(const unsigned char *bytes)
 {
   ENIGMA_FLAC_METADATA_HEADER header = (ENIGMA_FLAC_METADATA_HEADER){0};
-  if (!bytes || byteAmount != 4) return header;
+  if (!bytes) return header;
 
   header.isLast            = bytes[0] & 0x80u ? NEXUS_TRUE : NEXUS_FALSE; /* MSB */
   header.metadataBlockType = (nexus_u8)(bytes[0] & 0x7Fu); /* low 7 bits */
@@ -29,7 +34,8 @@ inline ENIGMA_FLAC_METADATA_HEADER enigma_metadata_header_info_create(
 }
 
 typedef struct ENIGMA_FLAC_INFORMATION {
-  char*       filePath;       /* owning pointer to path string */
+  char       *filePath;       /* owning pointer to path string */
+  NEXUS_FILE_INFORMATION_HANDLE fileInformationHandle;
 
   nexus_u64   totalSamples;   /* 36-bit in spec -> 64 here for headroom */
   nexus_u64   lastMetadataBlockEndOffset;
